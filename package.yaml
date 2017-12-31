@@ -1,0 +1,26 @@
+name:                termviz
+version:             0.1.0.0
+synopsis:            Ascii terminal visualiser
+#description:
+homepage:            https://github.com/rumblesan/termviz#readme
+license:             BSD3
+author:              Guy John
+maintainer:          guy@rumblesan.com
+copyright:           Guy John
+category:            Art
+extra-source-files:
+- README.md
+
+dependencies:
+  - base >= 4.7 && < 5
+  - vty
+
+ghc-options:
+  - -threaded
+  - -rtsopts
+  - -with-rtsopts=-N
+
+executables:
+  termviz:
+    source-dirs:      src
+    main:             Main.hs

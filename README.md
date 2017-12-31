@@ -1,0 +1,3 @@
+# Termviz
+
+Terminal based visualiser.
