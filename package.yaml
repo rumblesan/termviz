@@ -2,7 +2,7 @@ name:                termviz
 version:             0.1.0.0
 synopsis:            Ascii terminal visualiser
 #description:
-homepage:            https://github.com/rumblesan/termviz#readme
+homepage:            https://github.com/rumblesan/termviz#termviz
 license:             BSD3
 author:              Guy John
 maintainer:          guy@rumblesan.com
@@ -12,9 +12,22 @@ extra-source-files:
 - README.md
 
 dependencies:
+  - aeson
   - base >= 4.7 && < 5
-  - vty
+  - bytestring
+  - containers
+  - file-embed
+  - freetype2
+  - GLFW-b
+  - GLURaw
+  - lens-simple
+  - OpenGL
+  - OpenGLRaw
+  - optparse-applicative
   - stm
+  - vector
+  - Vec
+  - yaml
 
 ghc-options:
   - -threaded

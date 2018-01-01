@@ -1,52 +1,60 @@
 module Main where
 
-import           Data.Char                     as C
-import           Data.List                     as L
-import           Data.Maybe                    as M
+import           Control.Concurrent.STM
+import           System.Exit            (exitSuccess)
 
-import           Control.Monad                 (when)
+import qualified Graphics.UI.GLFW       as GLFW
+import           Lens.Simple            ((^.))
 
-import           Control.Concurrent            (threadDelay)
-import           Control.Concurrent.STM        (atomically)
-import           Control.Concurrent.STM.TChan  (tryReadTChan)
+import           AppState               (AppState (..), makeAppState,
+                                         programText)
+import           Configuration
+import           Gfx.TextRendering
+import           Gfx.Windowing          (setupWindow)
 
-import           Graphics.Vty
-import           Graphics.Vty.Image
-import           Graphics.Vty.Output.Interface
+main :: IO ()
+main = getConfig >>= app
 
-fpsToDelay :: Int -> Int
-fpsToDelay fps = 1000000 `div` fps
+app :: AppConfig -> IO ()
+app cfg = do
+  asTVar <- newTVarIO (makeAppState)
+  trenderTVar <- newEmptyTMVarIO
+  let initCB = initApp trenderTVar cfg
+  let resizeCB = resize trenderTVar
+  let displayCB = display asTVar trenderTVar
+  setupWindow
+    (cfg ^. screenWidth)
+    (cfg ^. screenHeight)
+    (cfg ^. fullscreenDisplay)
+    initCB
+    resizeCB
+    displayCB
+  exitSuccess
 
-generate :: Int -> Int -> Int -> Image
-generate frame width height =
-  let line =
-        horizCat $
-        map (\i -> char (attr (i + frame)) (c (i + frame))) [0 .. width]
-  in vertCat $ L.replicate height line
-  where
-    c n = C.chr $ (n `mod` 52) + 48
-    attr n =
-      currentAttr `withBackColor` Color240 (fromIntegral $ n `mod` 240) `withForeColor`
-      Color240 (fromIntegral $ abs (240 - n) `mod` 240)
+initApp :: TMVar TextRenderer -> AppConfig -> Int -> Int -> IO ()
+initApp trenderVar cfg width height =
+  let front = 0.1
+      back = 100
+  in do textRenderer <-
+          createTextRenderer
+            front
+            back
+            width
+            height
+            (cfg ^. fontConfig . fontFilePath)
+            (cfg ^. fontConfig . fontSize)
+        atomically $ putTMVar trenderVar textRenderer
 
-tryEvent :: Vty -> IO (Maybe Event)
-tryEvent vty =
-  let channel = _eventChannel $ inputIface vty
-  in atomically $ tryReadTChan channel
+resize :: TMVar TextRenderer -> GLFW.WindowSizeCallback
+resize trenderVar window newWidth newHeight = do
+  (fbWidth, fbHeight) <- GLFW.getFramebufferSize window
+  textRenderer <- atomically $ readTMVar trenderVar
+  newTrender <- resizeTextRendererScreen 0.1 100 fbWidth fbHeight textRenderer
+  atomically $ do putTMVar trenderVar newTrender
 
-main = do
-  cfg <- standardIOConfig
-  vty <- mkVty cfg
-  loop vty 0
-
-loop :: Vty -> Int -> IO ()
-loop vty frame = do
-  bounds <- displayBounds $ outputIface vty
-  let height = regionHeight bounds
-  let width = regionWidth bounds
-  let pic = picForImage $ generate frame width height
-  update vty pic
-  e <- tryEvent vty
-  when (M.isJust e) (shutdown vty)
-  threadDelay (fpsToDelay 30)
-  loop vty (frame + 1)
+display :: TVar AppState -> TMVar TextRenderer -> Double -> IO ()
+display appState trenderVar time = do
+  as <- readTVarIO appState
+  textRenderer <- atomically $ readTMVar trenderVar
+  renderText 0 0 textRenderer (as ^. programText)
+  renderTextbuffer textRenderer
