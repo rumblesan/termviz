@@ -10,7 +10,7 @@ module Gfx.TextRendering
   , TextRenderer
   ) where
 
-import           Control.Monad             (foldM_)
+import           Control.Monad             (forM_)
 import           Data.Maybe                (listToMaybe)
 import           GHC.Int                   (Int32)
 
@@ -56,11 +56,14 @@ import           Gfx.PostProcessing        (Savebuffer (..), createSavebuffer,
                                             deleteSavebuffer)
 
 import           Data.Vec                  (Mat44, multmm)
+import           Generator                 (GeneratorFunc)
 import           Gfx.Util.Matrices         (orthographicMat, translateMat)
 
 data TextRenderer = TextRenderer
   { textFont        :: Font
   , charSize        :: Int
+  , screenColumns   :: Int
+  , screenRows      :: Int
   , pMatrix         :: Mat44 GLfloat
   , textprogram     :: Program
   , bgprogram       :: Program
@@ -137,7 +140,9 @@ createTextRenderer front back width height fontPath charSize = do
           (ByteStringSource $(embedFile "assets/shaders/textrenderer-bg.frag"))
       ]
   font <- loadFont fontPath charSize
-  let projectionMatrix =
+  let columns = width `div` (fontAdvance font)
+      rows = height `div` (fontAscender font)
+      projectionMatrix =
         textCoordMatrix
           0
           (fromIntegral width)
@@ -150,6 +155,8 @@ createTextRenderer front back width height fontPath charSize = do
     TextRenderer
       font
       charSize
+      columns
+      rows
       projectionMatrix
       tprogram
       bgshaderprogram
@@ -177,11 +184,17 @@ resizeTextRendererScreen front back width height trender =
 changeTextColour :: Color4 GLfloat -> TextRenderer -> TextRenderer
 changeTextColour newColour trender = trender {textColour = newColour}
 
-renderText :: Int -> Int -> TextRenderer -> String -> IO ()
-renderText xpos ypos renderer strings = do
+renderText :: Int -> Int -> TextRenderer -> GeneratorFunc -> IO ()
+renderText xpos ypos renderer genFunc = do
   let (Savebuffer fbo _ _ _ _) = outbuffer renderer
   GL.bindFramebuffer Framebuffer $= fbo
-  renderCharacters xpos ypos renderer strings
+  GL.blend $= Enabled
+  GL.blendEquationSeparate $= (FuncAdd, FuncAdd)
+  GL.blendFuncSeparate $= ((SrcAlpha, OneMinusSrcAlpha), (One, Zero))
+  GL.depthFunc $= Nothing
+  GL.clearColor $= Color4 0.0 0.0 0.0 0.0
+  GL.clear [ColorBuffer]
+  renderCharacters xpos ypos renderer genFunc
 
 renderTextbuffer :: TextRenderer -> IO ()
 renderTextbuffer renderer = do
@@ -192,30 +205,29 @@ renderTextbuffer renderer = do
   GL.textureBinding Texture2D $= Just text
   drawVBO quadVBO
 
-renderCharacters :: Int -> Int -> TextRenderer -> String -> IO ()
-renderCharacters xpos ypos renderer strings = do
-  GL.blend $= Enabled
-  GL.blendEquationSeparate $= (FuncAdd, FuncAdd)
-  GL.blendFuncSeparate $= ((SrcAlpha, OneMinusSrcAlpha), (One, Zero))
-  GL.depthFunc $= Nothing
-  GL.clearColor $= Color4 0.0 0.0 0.0 0.0
-  GL.clear [ColorBuffer]
+renderCharacters :: Int -> Int -> TextRenderer -> GeneratorFunc -> IO ()
+renderCharacters xpos ypos renderer genFunc =
   let font = textFont renderer
-  foldM_
-    (\(xp, yp) c ->
-       case c of
-         '\n' -> return (xpos, yp + fontHeight font)
-         _ ->
-           maybe
-             (return (xp, yp + fontAdvance font))
-             (\c -> renderChar c xp yp font)
-             (getCharacter font c))
-    (xpos, ypos)
-    strings
+      maxCol = fromIntegral (screenColumns renderer - 1) :: Float
+      maxRow = fromIntegral (screenRows renderer - 1) :: Float
+      xDelta = 1 / maxCol
+      yDelta = 1 / maxRow
+      characters = do
+        x <- [0.0 .. maxCol]
+        y <- [0.0 .. maxRow]
+        let xP = x * xDelta
+        let yP = y * xDelta
+        return $ (round x, round y, (genFunc xP yP))
+  in forM_
+       characters
+       (\(x, y, (bgc, fgc, c)) ->
+          maybe (return ()) (\c -> renderChar c x y font) (getCharacter font c))
   where
     renderChar char xp yp f = do
-      renderCharacterBGQuad renderer char xp yp f
-      renderCharacterTextQuad renderer char xp yp f
+      let xPos = (xp * fontAdvance f)
+      let yPos = (yp * fontAscender f)
+      renderCharacterBGQuad renderer char xPos yPos f
+      renderCharacterTextQuad renderer char xPos yPos f
 
 sendProjectionMatrix :: Program -> Mat44 GLfloat -> IO ()
 sendProjectionMatrix program mat = do
@@ -244,7 +256,7 @@ renderCharacterQuad program pMatrix character charDrawFunc charVerts =
         GL.drawArrays primMode firstIndex numTriangles
 
 renderCharacterTextQuad ::
-     TextRenderer -> Character -> Int -> Int -> Font -> IO (Int, Int)
+     TextRenderer -> Character -> Int -> Int -> Font -> IO ()
 renderCharacterTextQuad renderer (Character c width height adv xBearing yBearing text) x y font =
   let baseline = fromIntegral (y + fontAscender font)
       gX1 = fromIntegral (x + xBearing)
@@ -292,7 +304,6 @@ renderCharacterTextQuad renderer (Character c width height adv xBearing yBearing
           (characterQuad renderer)
           charDrawFunc
           charVerts
-        return (x + adv, y)
 
 renderCharacterBGQuad ::
      TextRenderer -> Character -> Int -> Int -> Font -> IO ()

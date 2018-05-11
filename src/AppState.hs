@@ -2,14 +2,15 @@
 
 module AppState where
 
+import           Generator
 import           Lens.Simple
 
 data AppState = AppState
-  { _programText :: String
-  , _startTime   :: Float
-  } deriving (Show)
+  { _generatorFunc :: GeneratorFunc
+  , _startTime     :: Float
+  }
 
 makeLenses ''AppState
 
 makeAppState :: AppState
-makeAppState = AppState {_programText = "this is a test", _startTime = 0}
+makeAppState = AppState {_generatorFunc = generate, _startTime = 0}

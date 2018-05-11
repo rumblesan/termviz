@@ -6,8 +6,8 @@ import           System.Exit            (exitSuccess)
 import qualified Graphics.UI.GLFW       as GLFW
 import           Lens.Simple            ((^.))
 
-import           AppState               (AppState (..), makeAppState,
-                                         programText)
+import           AppState               (AppState (..), generatorFunc,
+                                         makeAppState)
 import           Configuration
 import           Gfx.TextRendering
 import           Gfx.Windowing          (setupWindow)
@@ -56,5 +56,5 @@ display :: TVar AppState -> TMVar TextRenderer -> Double -> IO ()
 display appState trenderVar time = do
   as <- readTVarIO appState
   textRenderer <- atomically $ readTMVar trenderVar
-  renderText 0 0 textRenderer (as ^. programText)
+  renderText 50 50 textRenderer (as ^. generatorFunc)
   renderTextbuffer textRenderer
